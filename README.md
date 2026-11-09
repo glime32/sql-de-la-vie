@@ -1,23 +1,27 @@
-# sql-de-la-vie
+<p align="center"><img src="docs/banner-sql-de-la-vie.png" alt="sql-de-la-vie" width="100%"></p>
 
-Le **Jeu de la vie** de Conway, et toute sa famille de règles « B/S », écrit **entièrement en SQL**. Pas de boucle, pas de variable, pas de langage impératif : SQLite fait tout, de la lecture du motif jusqu'à la détection des cycles.
+<p align="center"><img src="https://img.shields.io/badge/SQL-pure%20SQLite-003b57?style=flat-square" alt="SQL"> <img src="https://img.shields.io/badge/license-MIT-610089?style=flat-square" alt="license"></p>
 
-![Canon à planeurs de Gosper, calculé par SQLite](images/canon.gif)
+Conway's **Game of Life**, and its whole family of "B/S" rules, written **entirely in SQL**. No loop, no variable, no imperative language: SQLite does everything, from reading the pattern to detecting cycles.
 
-*Le canon à planeurs de Gosper, 240 générations calculées par une seule requête récursive.*
+<p align="center"><a href="README.fr.md">🇫🇷 Version française</a></p>
 
-## Lancer
+![Gosper glider gun, computed by SQLite](images/canon.gif)
+
+*Gosper's glider gun, 240 generations computed by a single recursive query.*
+
+## Run
 
 ```sh
-./vie.sh canon -l 60 -H 34 -g 240     # animation dans le terminal
-./vie.sh --liste                      # les motifs fournis
-./vie.sh diehard -b -g 140 -n         # juste le bilan
-./vie.sh soupe -r B3678/S34678        # « Day & Night » sur une soupe aléatoire
-./vie.sh -f motif.rle                 # n'importe quel motif de LifeWiki / Golly
-./tests.sh                            # vérifie le moteur sur des résultats connus
+./vie.sh canon -l 60 -H 34 -g 240     # animation in the terminal
+./vie.sh --liste                      # the bundled patterns
+./vie.sh diehard -b -g 140 -n         # only the summary
+./vie.sh soupe -r B3678/S34678        # "Day & Night" on a random soup
+./vie.sh -f motif.rle                 # any pattern from LifeWiki / Golly
+./tests.sh                            # checks the engine against known results
 ```
 
-Il faut `sqlite3` en version 3.44 ou plus. `vie.sh` ne calcule rien : il crée la table de paramètres, passe le script à `sqlite3`, et affiche les images une par une.
+You need `sqlite3` 3.44 or newer. `vie.sh` computes nothing: it creates the parameter table, hands the script to `sqlite3`, and shows the frames one by one. The program talks French (`bilan` = summary):
 
 ```
  ── bilan ──
@@ -27,15 +31,15 @@ Il faut `sqlite3` en version 3.44 ou plus. `vie.sh` ne calcule rien : il crée l
  population ▂▂▃▃▅▄▅▆▄▄▄▅▄▅▃▃▄▅▆▆▇▅▅▇▅▇▆▅▃▃▃▂▃▄▃▅▅▆▅▇█▅▅▄▃▅▄▄▄▃▃▂▂▂▁▁▁▁▁▁
 ```
 
-## Comment on fait ça en SQL
+## How to do that in SQL
 
-Tout est dans [`vie.sql`](vie.sql), commenté.
+Everything is in [`vie.sql`](vie.sql), with comments (in French).
 
-**La grille est une chaîne de caractères.** Une grille 40×24 devient un texte de 960 caractères, `#` pour une cellule vivante, `.` pour une morte. La case (x, y) est le caractère `y·w + x + 1`.
+**The grid is a string.** A 40×24 grid becomes a 960-character text, `#` for a live cell, `.` for a dead one. Cell (x, y) is character `y·w + x + 1`.
 
-**Les voisins sont précalculés.** Une table `voisins(i, j)` liste les 8 voisins de chaque case, repliés sur un tore ou coupés aux bords (`-b`). On l'obtient en croisant la grille avec deux mini-tables `{-1, 0, 1}`.
+**Neighbours are precomputed.** A table `voisins(i, j)` lists the 8 neighbours of each cell, wrapped around a torus or cut at the edges (`-b`). It comes from crossing the grid with two tiny tables `{-1, 0, 1}`.
 
-**Chaque génération est une ligne d'une requête récursive.** Le cœur du programme :
+**Each generation is one row of a recursive query.** The heart of the program:
 
 ```sql
 WITH RECURSIVE g(n, s) AS (
@@ -54,23 +58,23 @@ WITH RECURSIVE g(n, s) AS (
 )
 ```
 
-Pour chaque case on compte les `#` parmi ses voisins, puis on regarde si ce nombre figure dans la liste des chiffres de naissance (`'3'`) ou de survie (`'23'`) : `instr('23', 3) > 0`. Changer de règle, c'est seulement changer ces deux chaînes.
+For each cell, count the `#` among its neighbours, then check whether that number appears in the list of birth digits (`'3'`) or survival digits (`'23'`): `instr('23', 3) > 0`. Changing the rule only means changing those two strings.
 
-SQLite interdit les agrégats (`group_concat`, `sum`) directement dans la partie récursive. L'astuce est de les cacher dans des **sous-requêtes corrélées** : elles sont autorisées et voient la génération précédente `g.s`.
+SQLite forbids aggregates (`group_concat`, `sum`) directly in the recursive part. The trick is to hide them in **correlated subqueries**: those are allowed and can see the previous generation `g.s`.
 
-**Le format RLE est lu par un automate en SQL.** Un motif comme `bo$2bo$3o!` (le planeur) est lu caractère par caractère par une autre requête récursive, qui garde la position courante, le nombre en cours de lecture et émet des « séries » de cellules vivantes. Les commentaires `#` et l'en-tête `x = 5, y = 5, rule = B36/S23` sont reconnus ; la règle de l'en-tête est utilisée si on n'en donne pas.
+**RLE files are read by an automaton written in SQL.** A pattern like `bo$2bo$3o!` (the glider) is read character by character by another recursive query, which keeps the current position and the number being read, and emits "runs" of live cells. `#` comments and the `x = 5, y = 5, rule = B36/S23` header are understood; the header's rule is used if you don't give one.
 
-**Le bilan est une jointure.** Un cycle, c'est deux générations identiques : `generations a JOIN generations b ON a.s = b.s AND a.n < b.n`, et la première trouvée donne la période. La courbe de population est un `group_concat` des caractères `▁▂▃▄▅▆▇█`.
+**The summary is a join.** A cycle means two identical generations: `generations a JOIN generations b ON a.s = b.s AND a.n < b.n`, and the first match gives the period. The population curve is a `group_concat` of the characters `▁▂▃▄▅▆▇█`.
 
-**L'animation passe par un séparateur inhabituel.** Chaque image est une seule ligne du résultat, avec ses retours à la ligne dedans. `sqlite3 -newline $'\x1e'` sépare les lignes du résultat par le caractère « séparateur d'enregistrement » au lieu de `\n`, et `read -d $'\x1e'` les relit une par une.
+**The animation goes through an unusual separator.** Each frame is a single row of the result, with its line breaks inside. `sqlite3 -newline $'\x1e'` separates result rows with the "record separator" character instead of `\n`, and `read -d $'\x1e'` reads them back one by one.
 
-## Règles à essayer
+## Rules to try
 
-| Règle | Nom | Comportement |
+| Rule | Name | Behaviour |
 |---|---|---|
-| `B3/S23` | Conway | le classique |
-| `B36/S23` | HighLife | avec `replicateur` : un motif qui se copie |
-| `B2/S` | Seeds | rien ne survit, tout explose |
-| `B3678/S34678` | Day & Night | vivant et mort jouent des rôles symétriques |
-| `B1357/S1357` | Replicator | tout motif finit par se recopier |
-| `B3/S012345678` | Life without death | rien ne meurt, des « échelles » poussent |
+| `B3/S23` | Conway | the classic |
+| `B36/S23` | HighLife | with `replicateur`: a pattern that copies itself |
+| `B2/S` | Seeds | nothing survives, everything explodes |
+| `B3678/S34678` | Day & Night | live and dead play symmetric roles |
+| `B1357/S1357` | Replicator | every pattern ends up copying itself |
+| `B3/S012345678` | Life without death | nothing dies, "ladders" grow |
